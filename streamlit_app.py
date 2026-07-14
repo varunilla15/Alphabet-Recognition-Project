@@ -30,10 +30,7 @@ Required packages (add to requirements.txt):
     scikit-image
 """
 
-import os
-import time
 import threading
-import urllib.request
 
 import av
 import cv2
@@ -42,10 +39,10 @@ import mediapipe as mp
 import numpy as np
 import streamlit as st
 from PIL import Image
-from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.core.base_options import BaseOptions
 from skimage.feature import hog
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase, RTCConfiguration
+
+mp_hands = mp.solutions.hands
 
 # ---------------------------------------------------------
 # Settings (same as mediapipe_app.py)
@@ -54,12 +51,6 @@ CANVAS_SIZE = 400
 TRAINING_IMAGE_SIZE = 34
 LINE_THICKNESS = 8
 PINCH_THRESHOLD = 0.06
-
-MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
-MODEL_PATH = "hand_landmarker.task"
-
-if not os.path.exists(MODEL_PATH):
-    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
 
 # ---------------------------------------------------------
 # Cached resources -- loaded once per server process, not per user session
@@ -148,20 +139,16 @@ def predict_from_canvas(canvas):
 # ---------------------------------------------------------
 class HandWritingProcessor(VideoProcessorBase):
     def __init__(self):
-        base_options = BaseOptions(model_asset_path=MODEL_PATH)
-        options = vision.HandLandmarkerOptions(
-            base_options=base_options,
-            num_hands=1,
-            min_hand_detection_confidence=0.7,
-            min_hand_presence_confidence=0.6,
+        self.hands = mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            model_complexity=1,
+            min_detection_confidence=0.7,
             min_tracking_confidence=0.6,
-            running_mode=vision.RunningMode.VIDEO,
         )
-        self.hand_landmarker = vision.HandLandmarker.create_from_options(options)
 
         self.canvas = np.zeros((CANVAS_SIZE, CANVAS_SIZE), dtype=np.uint8)
         self.prev_point = None
-        self.start_time = time.time()
 
         # Flags set from the main Streamlit thread by button clicks
         self.clear_requested = False
@@ -187,15 +174,13 @@ class HandWritingProcessor(VideoProcessorBase):
                 self.clear_requested = False
 
         rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-        timestamp_ms = int((time.time() - self.start_time) * 1000)
-        result = self.hand_landmarker.detect_for_video(mp_image, timestamp_ms)
+        results = self.hands.process(rgb_frame)
 
         fingertip_point = None
         is_pinching = False
 
-        if result.hand_landmarks:
-            hand_landmarks = result.hand_landmarks[0]
+        if results.multi_hand_landmarks:
+            hand_landmarks = results.multi_hand_landmarks[0].landmark
             index_tip = hand_landmarks[8]
             thumb_tip = hand_landmarks[4]
 
