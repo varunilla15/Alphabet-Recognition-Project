@@ -9,11 +9,3 @@ joblib
 opencv-python
 mediapipe
 streamlit
-streamlit
-streamlit-webrtc
-av
-opencv-python-headless
-mediapipe
-joblib
-numpy
-scikit-image
